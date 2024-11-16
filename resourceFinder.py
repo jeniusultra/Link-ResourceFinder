@@ -1,213 +1,234 @@
-from tkinter import *
-from tkinter import ttk
-from tkinter import messagebox
-from bookFinder import BookFinder as bf
-from courseFinder import CourseFinder as cf
+#JeniusUltra's Link&ResourceFinder
+import tkinter as tk
+from tkinter import ttk, messagebox, scrolledtext
+import requests
+from bs4 import BeautifulSoup
+import threading
+import webbrowser
+import urllib.parse
+import re
 
-
-class ResourceFinder():
-    def __init__(self, master):
-        # Window settings
-        master.title("Link&RescourceFinder")
-        master.configure(background="#80ffff")
-        master.option_add('*tearOff', False)
-        master.geometry("1000x700")
-
-        # Menubar Declaration
-        self.menubar = Menu(master)
-        master.config(menu=self.menubar)
-
-        # Max Results Menu
-        self.maxRslts = Menu(self.menubar)
-        self.menubar.add_cascade(menu=self.maxRslts, label="Max Results")
-
-        self.maxR_choice = IntVar()
-        self.maxRslts.add_radiobutton(
-            label='10', variable=self.maxR_choice, value=10)
-        self.maxRslts.add_radiobutton(
-            label='20', variable=self.maxR_choice, value=20)
-        self.maxRslts.add_radiobutton(
-            label='30', variable=self.maxR_choice, value=30)
-
-        # Help menu
-        self.help_ = Menu(self.menubar)
-        self.menubar.add_cascade(menu=self.help_, label="Help")
-
-        self.help_.add_command(
-            label="About", command=lambda: self.help_about())
-
-        self.help_.add_command(
-            label="Tutorial", command=lambda: self.help_tutorial())
-
-        # First Frame w/ widgets
-        self.frame_first = ttk.Frame(master, padding=(15.45, 10))
-        self.frame_first.pack()
-
-        # Frame will be 2 rows with 3 columns
-        # (     Blank    )(   Exampletxt )(    Blank     )
-        # (   Entrytxt   )(   Entry      )(    Entertxt  )
-
-        ttk.Label(self.frame_first, text="Example: topic OR cheese,butter").grid(
-            row=0, column=1, padx=5, sticky='w')
-        ttk.Label(self.frame_first, text="Enter Your Topic(s):").grid(
-            row=1, column=0, padx=5, sticky='w')
-        self.topic_entry = ttk.Entry(self.frame_first, width=50)
-        self.topic_entry.grid(row=1, column=1, padx=5, sticky='w')
-
-        # Button to start search
-        ttk.Button(self.frame_first, text="Search", command=lambda: self.startSearch(self.maxR_choice, self.topic_entry, self.sortOpt, self.searchType)).grid(
-            row=1, column=2, padx=5)
-
-        # Second Frame w/ Widgets
-        self.frame_second = ttk.Frame(master, padding=(5, 10))
-        self.frame_second.pack()
-
-        # Frame will be 1 rows with 3 columns
-        # (   STtxt    )(    SearchType   )(   SOtxt   )(    Sortoption    )
-
-        ttk.Label(self.frame_second, text="Search Type:").grid(
-            row=0, column=0, padx=5, pady=5)
-
-        # Use this variable to determine what to search for
-        self.searchType = StringVar()
-        self.searchTypeCBox = ttk.Combobox(
-            self.frame_second, textvariable=self.searchType, values=('Books', 'Courses'))
-        self.searchTypeCBox.current(newindex=0)
-        self.searchTypeCBox.grid(row=0, column=1)
-
-        ttk.Label(self.frame_second, text="Sort By:").grid(
-            row=0, column=2, padx=5, pady=5)
-
-        # Use this variable to search for most frequent or most recent items
-        self.sortOpt = StringVar()
-        self.sortOptCBox = ttk.Combobox(
-            self.frame_second, textvariable=self.sortOpt, values=('Relevance', 'Newest'))
-        self.sortOptCBox.current(newindex=0)
-        self.sortOptCBox.grid(row=0, column=3)
-
-        # Paned window with two frames
-        self.rsltPWindow = ttk.PanedWindow(master, orient=HORIZONTAL)
-        self.rsltPWindow.pack(fill=BOTH, expand=True)
-
-        # Paned window will have two frames
-        # Left will be list of results, right will be options
-        # (  results    )(  open   )
-        # (             )( download)
-        # (             )(         )
-        # (             )(         )
-
-        self.frame_third = ttk.Frame(
-            self.rsltPWindow, width=200, height=100, relief=SUNKEN)
-        self.frame_fourth = ttk.Frame(
-            self.rsltPWindow, width=100, height=100)
-        self.rsltPWindow.add(self.frame_third, weight=2)
-        self.rsltPWindow.add(self.frame_fourth, weight=1)
-
-        ttk.Button(self.frame_fourth, text="Open",
-                   command=lambda: self.openLink(self.resultsList.get(
-                       0, 'end').index(self.resultsList.get(ACTIVE)))).pack(pady=10)
-
-        ttk.Button(self.frame_fourth, text="Download",
-                   command=lambda: self.downloadBook(self.resultsList.get(
-                       0, 'end').index(self.resultsList.get(ACTIVE)))).pack(pady=10)
-
-        self.resultsList = Listbox(
-            self.frame_third, selectmode=SINGLE, width=100, height=30)
-        self.resultsList.pack(fill=BOTH)
-
-        # List of links and titles for the results
-        self.listlinks = []
-        self.listTitles = []
-
-        # Progress bar for processes
-        self.progressbar = ttk.Progressbar(
-            master, orient=HORIZONTAL, length=300, mode='indeterminate')
-        self.progressbar.pack(fill=X)
-
-    # Help menu About option command
-    def help_about(self):
-        about_window = Toplevel()
-        about_window.title('About')
-        about_window.geometry("700x50")
-
-        ttk.Label(about_window,
-                  text="This application was created by David Llanio in order" +
-                  " to reduce the time spent googling for books and courses for new topics.").pack()
-
-    # Help menu Tutorial option command
-    def help_tutorial(self):
-        tutorial_window = Toplevel()
-        tutorial_window.title('Tutorial')
-        tutorial_window.geometry("700x200")
-
-        frame_tutorial = ttk.Frame(tutorial_window)
-        frame_tutorial.pack()
-
-        ttk.Label(frame_tutorial, text="1. Select the max number of results from the Max numbers Menu on the menubar." +
-                  "\n\n2. Enter your topic or topics seperated by commas or spaces.\n\n3. Choose books or courses from dropdown." +
-                  "\n\n4. Press enter to begin search." +
-                  "\n\n5. Click on a book from the list and then click either open or download.").pack()
-
-    # Search for content
-    def startSearch(self, maxResults, topics, orderType, searchType):
-        # Check to see if max results was selected
-        if maxResults.get() == 0:
-            messagebox.showerror(title="No Max Results Selected", message="You have not chosen the max number of results.\n" +
-                                 "Go to Max Results menu and choose")
-        # Search for search type selected
-        else:
-            if searchType.get() == "Books":
-
-                # Search results object
-                resultsobj = bf.searchRequest(
-                    topics.get(), maxResults.get(), orderType.get())
-
-                self.populateBookResultsList(resultsobj["items"])
-
-            elif searchType.get() == "Courses":
-                cf.searchCourses(topics.get())
-
-    # Populate the listbox with results
-    def populateBookResultsList(self, results):
-        self.resultsList.delete(0, 'end')
-        booktitles = []
-        bookauthors = []
-        booklinks = []
-
-        for item in results:
-            booktitles.append(item["volumeInfo"]["title"])
-            bookauthors.append(item["volumeInfo"]["authors"])
-            booklinks.append(item["volumeInfo"]["infoLink"])
-
-        listItems = []
-        for title in booktitles:
-            listItems.append(title)
-
-        for i in range(0, len(bookauthors)):
-            listItems[i] += " by: " + "/".join(bookauthors[i])
-
-        for i in range(0, len(listItems)):
-            self.resultsList.insert(i, listItems[i])
-
-        self.listlinks = booklinks
-        self.listTitles = booktitles
-
-    # Open book link in web browser
-    def openLink(self, indexlinkToOpen):
-        linkToOpen = self.listlinks[indexlinkToOpen]
-        bf.openBookInfo(linkToOpen)
-
-    # Download book
-    def downloadBook(self, indexBookName):
-        bookName = self.listTitles[indexBookName]
-        bf.downloadRequest(bookName)
-
+class LinkResourceFinder:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Link & Resource Finder")
+        self.root.geometry("1200x800")
+        
+        self.create_interface()
+    
+    def create_interface(self):
+        # Search Frame
+        search_frame = tk.Frame(self.root)
+        search_frame.pack(fill='x', padx=10, pady=10)
+        
+        # Search Entry
+        self.search_var = tk.StringVar()
+        search_entry = tk.Entry(
+            search_frame, 
+            textvariable=self.search_var, 
+            font=('Arial', 14), 
+            width=50
+        )
+        search_entry.pack(side='left', expand=True, fill='x', padx=5)
+        search_entry.bind('<Return>', lambda event: self.start_resource_search())
+        
+        # Search Button
+        search_btn = tk.Button(
+            search_frame, 
+            text="Find Resources", 
+            command=self.start_resource_search
+        )
+        search_btn.pack(side='right', padx=5)
+        
+        # Results Text Area
+        self.results_text = scrolledtext.ScrolledText(
+            self.root, 
+            wrap=tk.WORD, 
+            font=('Courier', 10)
+        )
+        self.results_text.pack(expand=True, fill='both', padx=10, pady=10)
+        
+        # Make text read-only and add link detection
+        self.results_text.tag_config('link', foreground='blue', underline=True)
+        self.results_text.bind('<Button-1>', self.handle_link_click)
+    
+    def start_resource_search(self):
+        query = self.search_var.get().strip()
+        if not query:
+            messagebox.showwarning("Error", "Please enter a search query")
+            return
+        
+        # Clear previous results
+        self.results_text.delete(1.0, tk.END)
+        
+        # Start threaded search
+        threading.Thread(
+            target=self.comprehensive_resource_search, 
+            args=(query,), 
+            daemon=True
+        ).start()
+    
+    def comprehensive_resource_search(self, query):
+        results = []
+        
+        # Multiple search strategies
+        search_methods = [
+            self.google_search,
+            self.scholarly_search,
+            self.github_search
+        ]
+        
+        for method in search_methods:
+            try:
+                method_results = method(query)
+                results.extend(method_results)
+            except Exception as e:
+                print(f"Search method error: {method.__name__}: {e}")
+        
+        # Update results in main thread
+        self.root.after(0, self.display_results, results)
+    
+    def google_search(self, query):
+        # Encode the query for URL
+        encoded_query = urllib.parse.quote(query)
+        
+        # Construct search URL
+        url = f"https://www.google.com/search?q={encoded_query}+filetype:pdf+OR+site:academia.edu"
+        
+        try:
+            # Send request with user agent to mimic browser
+            response = requests.get(
+                url, 
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+                }
+            )
+            
+            # Parse the HTML
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Extract links
+            results = []
+            for link in soup.find_all('a', href=True):
+                href = link['href']
+                # Filter and clean links
+                if href.startswith('/url?q='):
+                    clean_link = href.split('/url?q=')[1].split('&sa=')[0]
+                    if any(ext in clean_link.lower() for ext in ['.pdf', 'academia.edu']):
+                        results.append(clean_link)
+            
+            return list(set(results))[:20]
+        
+        except Exception as e:
+            print(f"Google search error: {e}")
+            return []
+    
+    def scholarly_search(self, query):
+        # Encode the query for URL
+        encoded_query = urllib.parse.quote(query)
+        
+        # Construct search URL for Google Scholar
+        url = f"https://scholar.google.com/scholar?q={encoded_query}"
+        
+        try:
+            # Send request with user agent to mimic browser
+            response = requests.get(
+                url, 
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+                }
+            )
+            
+            # Parse the HTML
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Extract links to scholarly articles
+            results = []
+            for link in soup.find_all('a', href=True):
+                href = link['href']
+                # Filter links to scholarly sources
+                if href.startswith('http') and ('scholar.google' in href or '.pdf' in href):
+                    results.append(href)
+            
+            return list(set(results))[:20]
+        
+        except Exception as e:
+            print(f"Scholarly search error: {e}")
+            return []
+    
+    def github_search(self, query):
+        # Encode the query for URL
+        encoded_query = urllib.parse.quote(query)
+        
+        # Construct GitHub search URL
+        url = f"https://github.com/search?q={encoded_query}+extension:pdf"
+        
+        try:
+            # Send request with user agent to mimic browser
+            response = requests.get(
+                url, 
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+                }
+            )
+            
+            # Parse the HTML
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Extract repository links
+            results = []
+            for link in soup.find_all('a', href=True):
+                href = link['href']
+                # Filter GitHub links
+                if href.startswith('/') and href.count('/') == 2:
+                    full_link = f"https://github.com{href}"
+                    results.append(full_link)
+            
+            return list(set(results))[:20]
+        
+        except Exception as e:
+            print(f"GitHub search error: {e}")
+            return []
+    
+    def display_results(self, results):
+        if not results:
+            self.results_text.insert(tk.END, "No resources found. Try a different search.")
+            return
+        
+        # Deduplicate and limit results
+        unique_results = list(set(results))[:50]
+        
+        # Display results with clickable links
+        for link in unique_results:
+            # Truncate long links
+            display_link = link[:100] + '...' if len(link) > 100 else link
+            
+            # Insert link with tag for clickability
+            self.results_text.insert(tk.END, display_link + '\n', 'link')
+    
+    def handle_link_click(self, event):
+        # Get the index of the clicked position
+        index = self.results_text.index(f"@{event.x},{event.y}")
+        
+        # Get the tags at that index
+        tags = self.results_text.tag_names(index)
+        
+        # If the link tag is present, open the link
+        if 'link' in tags:
+            # Get the text of the link
+            line_start = self.results_text.index(f"{index} linestart")
+            line_end = self.results_text.index(f"{index} lineend")
+            link = self.results_text.get(line_start, line_end).strip()
+            
+            try:
+                webbrowser.open(link)
+            except Exception as e:
+                print(f"Error opening link: {e}")
 
 def main():
-    root = Tk()
-    resourcefinder = ResourceFinder(root)
+    root = tk.Tk()
+    app = LinkResourceFinder(root)
     root.mainloop()
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
